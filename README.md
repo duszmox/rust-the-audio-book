@@ -59,6 +59,9 @@ What the app does (in detail)
 - Code block summarization: Finds triple‑backtick blocks and replaces their content by calling Gemini `generateContent` on `gemini-2.5-flash` with a short, non‑jargony summary prompt.
 - Text sanitization for TTS:
   - Removes Markdown links: `[text](url)` → `text`, `[text][id]` → `text`, drops autolinks `<https://...>` and bare URLs.
+  - Handles images for audio friendliness:
+    - Markdown images: `![alt](url)` and `![alt][id]` become just `alt`.
+    - HTML images: `<img ... alt="...">` becomes the `alt` text; images without an `alt` are removed.
   - Removes reference link definitions like `[id]: https://...`.
   - Strips headings (`#`), list bullets (`- * +`), numbered lists (`1.`, `1)`), and leading blockquote markers (`>`).
   - Drops lines starting with `<Listing` / `</Listing>` and code fence lines (```).
@@ -104,7 +107,11 @@ Notes and limitations
 
 Project layout
 
-- `src/main.rs` — Implementation of scanning, sanitizing, Gemini calls, chunking, and audio merge.
+- `src/main.rs` — CLI entry; orchestrates scanning, sanitizing, TTS, merging.
+- `src/audio.rs` — Audio helpers (MIME/extension, MP3/WAV merge, PCM→WAV wrap).
+- `src/markdown.rs` — Code‑block summarization, sanitization, chunking.
+- `src/tts.rs` — Gemini client (summaries + TTS with retries).
+- `src/util.rs` — Small utilities (timestamps, etc.).
 - `Cargo.toml` — Dependencies (`reqwest`, `tokio`, `serde`, `dotenvy`, `regex`, `chrono`, etc.).
 - `.env` — Must contain `GEMINI_API_KEY`.
 - `audio/` — Output directory for generated audio files.
