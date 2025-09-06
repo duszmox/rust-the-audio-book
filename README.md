@@ -78,6 +78,7 @@ Outputs
 What the app does
 
 - Include expansion:
+
   - Recognizes mdBook directives and inlines their targets before any summarization:
     - `{{#include relative/path}}` inlines the whole file.
     - `{{#rustdoc_include relative/path[:region]}}` inlines either the whole file or only the region between `// ANCHOR: region` and `// ANCHOR_END: region`.
@@ -127,6 +128,10 @@ cargo run --release -- book/src/ch02-00-guessing-game-tutorial.md
 # ...
 # Processed book/src/ch02-00-guessing-game-tutorial.md => audio/ch02-00-guessing-game-tutorial.wav (3123456 bytes from 12 chunks)
 ```
+
+Sample audio
+
+- Example output for Chapter 6.2 [(The `match` Control Flow Construct)](./sample/ch06-02-match.wav)
 
 Notes and limitations
 
