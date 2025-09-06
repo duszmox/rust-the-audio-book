@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use base64::Engine;
-use reqwest::header::{CONTENT_TYPE, RETRY_AFTER};
 use reqwest::StatusCode;
-use tokio::time::{sleep, Duration};
+use reqwest::header::{CONTENT_TYPE, RETRY_AFTER};
+use tokio::time::{Duration, sleep};
 
 use crate::audio::{is_raw_linear_pcm, parse_sample_rate, wrap_pcm_to_wav};
 
@@ -26,11 +26,8 @@ impl GeminiClient {
 
     pub async fn summarize_code_block(&self, code: &str) -> Result<String> {
         let prompt = format!(
-            "You are helping write an audio book. Summarize the following code block succinctly (2-4 sentences) for listeners.\n\
-             Focus on what it does and why it matters.\n\
-             Avoid code, jargon, and backticks.\n\
-             Keep it clear and engaging.\n\
-\nCode block:\n{code}"
+            "You are helping write an audio book. Convert the following code block to how a human would read it aloud. Say everything phonetically. No need to say opening curly brackets or semicolons. The following code is rust, so use that terminology
+            \nCode block:\n{code}"
         );
 
         let url = format!(
@@ -51,7 +48,10 @@ impl GeminiClient {
         if let Some(text) = extract_first_text(&parsed) {
             return Ok(text.to_string());
         }
-        Err(anyhow!("no text returned from summary response: {}", parsed))
+        Err(anyhow!(
+            "no text returned from summary response: {}",
+            parsed
+        ))
     }
 
     pub async fn tts_generate(&self, input_text: &str) -> Result<(Vec<u8>, String)> {
@@ -124,7 +124,11 @@ impl GeminiClient {
                         let wait = compute_backoff(attempt, headers.get(RETRY_AFTER));
                         eprintln!(
                             "warn: request to {} failed with {}. retrying in {:?} (attempt {}/{})",
-                            url, status, wait, attempt + 1, max_retries
+                            url,
+                            status,
+                            wait,
+                            attempt + 1,
+                            max_retries
                         );
                         sleep(wait).await;
                         attempt += 1;
@@ -143,7 +147,10 @@ impl GeminiClient {
                         let wait = compute_backoff(attempt, None);
                         eprintln!(
                             "warn: network error: {}. retrying in {:?} (attempt {}/{})",
-                            e, wait, attempt + 1, max_retries
+                            e,
+                            wait,
+                            attempt + 1,
+                            max_retries
                         );
                         sleep(wait).await;
                         attempt += 1;
@@ -212,7 +219,10 @@ fn should_retry(status: StatusCode) -> bool {
     )
 }
 
-fn compute_backoff(attempt: usize, retry_after_hdr: Option<&reqwest::header::HeaderValue>) -> Duration {
+fn compute_backoff(
+    attempt: usize,
+    retry_after_hdr: Option<&reqwest::header::HeaderValue>,
+) -> Duration {
     if let Some(hv) = retry_after_hdr {
         if let Ok(s) = hv.to_str() {
             if let Ok(secs) = s.trim().parse::<u64>() {
@@ -224,4 +234,3 @@ fn compute_backoff(attempt: usize, retry_after_hdr: Option<&reqwest::header::Hea
     let jitter_ms = ((attempt as u64 + 1) * 137) % 500;
     Duration::from_secs(base_secs) + Duration::from_millis(jitter_ms)
 }
-

@@ -1,9 +1,15 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 pub fn guess_audio_extension(mime: &str) -> &'static str {
     match mime {
         m if m.contains("mpeg") || m.contains("mp3") => ".mp3",
-        m if m.contains("wav") || m.contains("x-wav") || m.contains("pcm") || m.contains("linear16") => ".wav",
+        m if m.contains("wav")
+            || m.contains("x-wav")
+            || m.contains("pcm")
+            || m.contains("linear16") =>
+        {
+            ".wav"
+        }
         m if m.contains("ogg") => ".ogg",
         m if m.contains("flac") => ".flac",
         _ => ".bin",
@@ -58,7 +64,7 @@ pub fn try_merge_wav(parts: &[&[u8]]) -> Result<Vec<u8>> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct WavFmt {
-    audio_format: u16,   // 1 = PCM, 3 = IEEE float
+    audio_format: u16, // 1 = PCM, 3 = IEEE float
     num_channels: u16,
     sample_rate: u32,
     byte_rate: u32,
@@ -77,17 +83,52 @@ fn parse_wav_fmt(bytes: &[u8]) -> Result<(WavFmt, u32)> {
         let sz = u32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
         let chunk_data_start = off + 8;
         let chunk_data_end = chunk_data_start + sz as usize;
-        if chunk_data_end > bytes.len() { break; }
+        if chunk_data_end > bytes.len() {
+            break;
+        }
         if id == b"fmt " {
-            if sz < 16 { return Err(anyhow!("fmt chunk too small")); }
-            let audio_format = u16::from_le_bytes(bytes[chunk_data_start..chunk_data_start + 2].try_into().unwrap());
-            let num_channels = u16::from_le_bytes(bytes[chunk_data_start + 2..chunk_data_start + 4].try_into().unwrap());
-            let sample_rate = u32::from_le_bytes(bytes[chunk_data_start + 4..chunk_data_start + 8].try_into().unwrap());
-            let byte_rate = u32::from_le_bytes(bytes[chunk_data_start + 8..chunk_data_start + 12].try_into().unwrap());
-            let block_align = u16::from_le_bytes(bytes[chunk_data_start + 12..chunk_data_start + 14].try_into().unwrap());
-            let bits_per_sample = u16::from_le_bytes(bytes[chunk_data_start + 14..chunk_data_start + 16].try_into().unwrap());
+            if sz < 16 {
+                return Err(anyhow!("fmt chunk too small"));
+            }
+            let audio_format = u16::from_le_bytes(
+                bytes[chunk_data_start..chunk_data_start + 2]
+                    .try_into()
+                    .unwrap(),
+            );
+            let num_channels = u16::from_le_bytes(
+                bytes[chunk_data_start + 2..chunk_data_start + 4]
+                    .try_into()
+                    .unwrap(),
+            );
+            let sample_rate = u32::from_le_bytes(
+                bytes[chunk_data_start + 4..chunk_data_start + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            let byte_rate = u32::from_le_bytes(
+                bytes[chunk_data_start + 8..chunk_data_start + 12]
+                    .try_into()
+                    .unwrap(),
+            );
+            let block_align = u16::from_le_bytes(
+                bytes[chunk_data_start + 12..chunk_data_start + 14]
+                    .try_into()
+                    .unwrap(),
+            );
+            let bits_per_sample = u16::from_le_bytes(
+                bytes[chunk_data_start + 14..chunk_data_start + 16]
+                    .try_into()
+                    .unwrap(),
+            );
             fmt = Some((
-                WavFmt { audio_format, num_channels, sample_rate, byte_rate, block_align, bits_per_sample },
+                WavFmt {
+                    audio_format,
+                    num_channels,
+                    sample_rate,
+                    byte_rate,
+                    block_align,
+                    bits_per_sample,
+                },
                 sz,
             ));
             break;
@@ -107,7 +148,9 @@ fn parse_wav_data(bytes: &[u8]) -> Result<&[u8]> {
         let sz = u32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
         let chunk_data_start = off + 8;
         let chunk_data_end = chunk_data_start + sz as usize;
-        if chunk_data_end > bytes.len() { break; }
+        if chunk_data_end > bytes.len() {
+            break;
+        }
         if id == b"data" {
             return Ok(&bytes[chunk_data_start..chunk_data_end]);
         }
@@ -157,15 +200,26 @@ pub fn parse_sample_rate(mime: &str) -> Option<u32> {
             let tail = &lower[pos + key.len()..];
             let mut num = String::new();
             for ch in tail.chars() {
-                if ch.is_ascii_digit() { num.push(ch); } else { break; }
+                if ch.is_ascii_digit() {
+                    num.push(ch);
+                } else {
+                    break;
+                }
             }
-            if let Ok(v) = num.parse::<u32>() { return Some(v); }
+            if let Ok(v) = num.parse::<u32>() {
+                return Some(v);
+            }
         }
     }
     None
 }
 
-pub fn wrap_pcm_to_wav(pcm: &[u8], sample_rate: u32, channels: u16, bits_per_sample: u16) -> Result<Vec<u8>> {
+pub fn wrap_pcm_to_wav(
+    pcm: &[u8],
+    sample_rate: u32,
+    channels: u16,
+    bits_per_sample: u16,
+) -> Result<Vec<u8>> {
     let block_align = channels * (bits_per_sample / 8);
     let byte_rate = sample_rate * block_align as u32;
     let fmt = WavFmt {
@@ -181,4 +235,3 @@ pub fn wrap_pcm_to_wav(pcm: &[u8], sample_rate: u32, channels: u16, bits_per_sam
     out.extend_from_slice(pcm);
     Ok(out)
 }
-

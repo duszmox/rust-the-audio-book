@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use dotenvy::dotenv;
 use glob::glob;
 use std::env;
@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use rust_the_audio_book::audio::{guess_audio_extension, merge_concat, merge_mp3, try_merge_wav};
-use rust_the_audio_book::markdown::{replace_code_blocks_with_summaries, sanitize_markdown_for_tts, split_into_chunks_by_paragraph};
+use rust_the_audio_book::markdown::{
+    replace_code_blocks_with_summaries, sanitize_markdown_for_tts, split_into_chunks_by_paragraph,
+};
 use rust_the_audio_book::tts::GeminiClient;
 use rust_the_audio_book::util::now_ts;
 
@@ -63,7 +65,8 @@ async fn process_markdown_file(client: &GeminiClient, path: &Path, audio_dir: &P
         path.display(),
         original.chars().count()
     );
-    let (transformed, summarized_blocks) = replace_code_blocks_with_summaries(client, &original).await?;
+    let (transformed, summarized_blocks) =
+        replace_code_blocks_with_summaries(client, &original).await?;
     println!(
         "Summarized {} code block(s) in {}",
         summarized_blocks,
@@ -91,20 +94,25 @@ async fn process_markdown_file(client: &GeminiClient, path: &Path, audio_dir: &P
     let mut parts: Vec<(Vec<u8>, String)> = Vec::new();
     for (i, chunk) in chunks.iter().enumerate() {
         println!(
-            "{} | TTS part {:02}: {} chars...",
+            "{} | TTS part {:02}/{:02}: {} chars...",
             now_ts(),
+            chunks.len() - 1,
             i + 1,
             chunk.chars().count()
         );
         let t0 = Instant::now();
-        let (audio_bytes, mime_type) = client
-            .tts_generate(chunk)
-            .await
-            .with_context(|| format!("TTS generation failed for {} (part {})", path.display(), i + 1))?;
+        let (audio_bytes, mime_type) = client.tts_generate(chunk).await.with_context(|| {
+            format!(
+                "TTS generation failed for {} (part {})",
+                path.display(),
+                i + 1
+            )
+        })?;
         println!(
-            "{} | TTS part {:02}: mime={}, {} bytes, took {:?}",
+            "{} | TTS part {:02}/{:02}: mime={}, {} bytes, took {:?}",
             now_ts(),
             i + 1,
+            chunks.len() - 1,
             mime_type,
             audio_bytes.len(),
             t0.elapsed()
@@ -129,7 +137,10 @@ async fn process_markdown_file(client: &GeminiClient, path: &Path, audio_dir: &P
         match try_merge_wav(&parts.iter().map(|(b, _)| b.as_slice()).collect::<Vec<_>>()) {
             Ok(bytes) => bytes,
             Err(e) => {
-                eprintln!("warn: WAV merge failed ({}). Falling back to naive concat.", e);
+                eprintln!(
+                    "warn: WAV merge failed ({}). Falling back to naive concat.",
+                    e
+                );
                 merge_concat(&parts.iter().map(|(b, _)| b.as_slice()).collect::<Vec<_>>())
             }
         }
@@ -155,4 +166,3 @@ async fn process_markdown_file(client: &GeminiClient, path: &Path, audio_dir: &P
 
     Ok(())
 }
-

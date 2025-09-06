@@ -13,7 +13,7 @@ Requirements
 
 - Rust (stable toolchain) and Cargo
 - Internet access
-- Google Gemini API key with access to:
+- [Google Gemini API key](https://aistudio.google.com/apikey) with access to:
   - `gemini-2.5-flash` (text summaries)
   - `gemini-2.5-pro-preview-tts` (text‑to‑speech)
 
@@ -21,13 +21,13 @@ Setup
 
 1. Ensure your `.env` file contains your Gemini key:
 
-```
+```yaml
 GEMINI_API_KEY=your_api_key_here
 ```
 
 2. Build the project:
 
-```
+```sh
 cargo build --release
 ```
 
@@ -35,13 +35,13 @@ Usage
 
 - Process all chapters in `book/src/`:
 
-```
+```sh
 cargo run --release
 ```
 
 - Process a single chapter:
 
-```
+```sh
 cargo run --release -- book/src/ch01-02-hello-world.md
 ```
 
@@ -54,7 +54,7 @@ Outputs
   - OGG → `.ogg`
   - Unknown → `.bin` (fallback)
 
-What the app does (in detail)
+What the app does
 
 - Code block summarization: Finds triple‑backtick blocks and replaces their content by calling Gemini `generateContent` on `gemini-2.5-flash` with a short, non‑jargony summary prompt.
 - Text sanitization for TTS:
@@ -84,7 +84,7 @@ Handling rate limits and errors
 
 Examples
 
-```
+```sh
 cargo run --release -- book/src/ch02-00-guessing-game-tutorial.md
 
 # Output sample
@@ -101,9 +101,11 @@ cargo run --release -- book/src/ch02-00-guessing-game-tutorial.md
 
 Notes and limitations
 
-- [ ] The transformed markdown is not written back to disk; it’s used only for TTS.
-- [ ] Only triple‑backtick code fences are summarized; indented code blocks are ignored.
-- [ ] Streaming (`streamGenerateContent`) is not used; if your account only allows streaming for TTS, extend the client to parse SSE and assemble audio.
+The transformed markdown is not written back to disk; it’s used only for TTS.
+
+Only triple‑backtick code fences are summarized; indented code blocks are ignored.
+
+Streaming (`streamGenerateContent`) is not used; if your account only allows streaming for TTS, extend the client to parse SSE and assemble audio.
 
 Project layout
 

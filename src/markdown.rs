@@ -137,7 +137,9 @@ pub fn split_into_chunks_by_paragraph(input: &str, max_chars: usize) -> Vec<Stri
                         last_sentence_end = Some(k);
                     }
                 }
-                if let Some(se) = last_sentence_end { end = se + 1; }
+                if let Some(se) = last_sentence_end {
+                    end = se + 1;
+                }
             }
         }
 
@@ -198,13 +200,17 @@ pub fn sanitize_markdown_for_tts(input: &str) -> String {
         if t.starts_with("<Listing") || t.starts_with("</Listing") {
             continue;
         }
-        if t.starts_with("```") { continue; }
+        if t.starts_with("```") {
+            continue;
+        }
         lines.push(line);
     }
     text = lines.join("\n");
 
     // Replace HTML <img ... alt="..."> with its alt text before stripping tags
-    let re_img_tag = Regex::new(r#"(?is)<img\b[^>]*?alt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>"#).unwrap();
+    let re_img_tag =
+        Regex::new(r#"(?is)<img\b[^>]*?alt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>"#)
+            .unwrap();
     text = re_img_tag
         .replace_all(&text, |caps: &regex::Captures| {
             caps.get(1)
