@@ -10,7 +10,7 @@ use rust_the_audio_book::audio::{guess_audio_extension, merge_concat, merge_mp3,
 use rust_the_audio_book::markdown::{
     replace_code_blocks_with_summaries, sanitize_markdown_for_tts, split_into_chunks_by_paragraph,
 };
-use rust_the_audio_book::tts::GeminiClient;
+use rust_the_audio_book::tts::{AVAILABLE_VOICES, GeminiClient};
 use rust_the_audio_book::util::now_ts;
 
 #[tokio::main]
@@ -22,6 +22,38 @@ async fn main() -> Result<()> {
 
     let client = GeminiClient::new(api_key)?;
 
+    let mut args = env::args();
+    let program = args
+        .next()
+        .unwrap_or_else(|| "rust-the-audio-book".to_string());
+
+    let mut voice_name: String = "Zephyr".to_string();
+    let mut file_args: Vec<PathBuf> = Vec::new();
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-h" | "--help" | "help" => {
+                print_help(&program);
+                std::process::exit(0);
+            }
+            "--list-voices" => {
+                print_voices();
+                std::process::exit(0);
+            }
+            "-v" | "--voice" => {
+                let v = args.next().unwrap_or_else(|| {
+                    eprintln!("error: --voice requires a value");
+                    print_help(&program);
+                    std::process::exit(2);
+                });
+                voice_name = v;
+            }
+            other => {
+                file_args.push(PathBuf::from(other));
+            }
+        }
+    }
+
     // Ensure audio output directory exists
     let audio_dir = Path::new("audio");
     if !audio_dir.exists() {
@@ -29,9 +61,8 @@ async fn main() -> Result<()> {
     }
 
     // Build list of markdown files to process
-    let mut args = env::args().skip(1);
-    let paths: Vec<PathBuf> = if let Some(one_path) = args.next() {
-        vec![PathBuf::from(one_path)]
+    let paths: Vec<PathBuf> = if !file_args.is_empty() {
+        file_args
     } else {
         let mut v = Vec::new();
         for entry in glob("book/src/*.md").context("glob pattern failed")? {
@@ -40,11 +71,22 @@ async fn main() -> Result<()> {
         v
     };
 
-    println!("Found {} markdown file(s) to process.", paths.len());
+    if !AVAILABLE_VOICES.iter().any(|(n, _)| n == &voice_name) {
+        eprintln!(
+            "warn: voice '{}' not in known list; proceeding anyway",
+            voice_name
+        );
+    }
+
+    println!(
+        "Found {} markdown file(s) to process. Using voice: {}",
+        paths.len(),
+        voice_name
+    );
     for (i, path) in paths.iter().enumerate() {
         println!("[{} / {}] Starting {}", i + 1, paths.len(), path.display());
         let t0 = Instant::now();
-        process_markdown_file(&client, path, audio_dir).await?;
+        process_markdown_file(&client, path, audio_dir, &voice_name).await?;
         println!(
             "[{} / {}] Finished {} in {:?}",
             i + 1,
@@ -57,7 +99,12 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn process_markdown_file(client: &GeminiClient, path: &Path, audio_dir: &Path) -> Result<()> {
+async fn process_markdown_file(
+    client: &GeminiClient,
+    path: &Path,
+    audio_dir: &Path,
+    voice_name: &str,
+) -> Result<()> {
     let original = fs::read_to_string(path)
         .with_context(|| format!("failed to read file {}", path.display()))?;
     println!(
@@ -101,13 +148,17 @@ async fn process_markdown_file(client: &GeminiClient, path: &Path, audio_dir: &P
             chunk.chars().count()
         );
         let t0 = Instant::now();
-        let (audio_bytes, mime_type) = client.tts_generate(chunk).await.with_context(|| {
-            format!(
-                "TTS generation failed for {} (part {})",
-                path.display(),
-                i + 1
-            )
-        })?;
+        let (audio_bytes, mime_type) =
+            client
+                .tts_generate(chunk, voice_name)
+                .await
+                .with_context(|| {
+                    format!(
+                        "TTS generation failed for {} (part {})",
+                        path.display(),
+                        i + 1
+                    )
+                })?;
         println!(
             "{} | TTS part {:02}/{:02}: mime={}, {} bytes, took {:?}",
             now_ts(),
@@ -165,4 +216,28 @@ async fn process_markdown_file(client: &GeminiClient, path: &Path, audio_dir: &P
     );
 
     Ok(())
+}
+
+fn print_help(program: &str) {
+    println!(
+        "Usage: {program} [OPTIONS] [MARKDOWN_FILE]\n\n\
+Options:\n  -v, --voice <NAME>   Choose a voice (default: Zephyr)\n      --list-voices     List available voices and exit\n  -h, --help           Show this help and exit\n\n\
+Args:\n  MARKDOWN_FILE        Optional single markdown file. If omitted, processes all book/src/*.md\n\n\
+Examples:\n  {program} --voice Zephyr\n  {program} --voice Leda book/src/ch08-02-strings.md\n  {program} --list-voices\n"
+    );
+    print_voices_brief();
+}
+
+fn print_voices() {
+    println!("Available voices:");
+    for (name, desc) in AVAILABLE_VOICES {
+        println!("  {:<16} {}", name, desc);
+    }
+}
+
+fn print_voices_brief() {
+    println!("\nVoices (name — description):");
+    for (name, desc) in AVAILABLE_VOICES {
+        println!("  {} — {}", name, desc);
+    }
 }

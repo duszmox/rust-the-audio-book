@@ -227,6 +227,9 @@ pub fn sanitize_markdown_for_tts(input: &str) -> String {
     let re_tags = Regex::new(r"</?[^>]+>").unwrap();
     text = re_tags.replace_all(&text, "").into_owned();
 
+    // Replace &str with "ref estr" and `str` with estr
+    text = text.replace("&str", "ref estr").replace("`str`", "estr");
+
     // Remove backticks (inline code markers)
     text = text.replace('`', "");
 

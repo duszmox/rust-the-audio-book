@@ -6,6 +6,41 @@ use tokio::time::{Duration, sleep};
 
 use crate::audio::{is_raw_linear_pcm, parse_sample_rate, wrap_pcm_to_wav};
 
+// Public list of available voices and their short descriptions.
+// The voice_name is what the TTS API expects.
+pub const AVAILABLE_VOICES: &[(&str, &str)] = &[
+    ("Zephyr", "Bright"),
+    ("Puck", "Upbeat"),
+    ("Charon", "Informative"),
+    ("Kore", "Firm"),
+    ("Fenrir", "Excitable"),
+    ("Leda", "Youthful"),
+    ("Orus", "Firm"),
+    ("Aoede", "Breezy"),
+    ("Callirrhoe", "Easy-going"),
+    ("Autonoe", "Bright"),
+    ("Enceladus", "Breathy"),
+    ("Iapetus", "Clear"),
+    ("Umbriel", "Easy-going"),
+    ("Algieba", "Smooth"),
+    ("Despina", "Smooth"),
+    ("Erinome", "Clear"),
+    ("Algenib", "Gravelly"),
+    ("Rasalgethi", "Informative"),
+    ("Laomedeia", "Upbeat"),
+    ("Achernar", "Soft"),
+    ("Alnilam", "Firm"),
+    ("Schedar", "Even"),
+    ("Gacrux", "Mature"),
+    ("Pulcherrima", "Forward"),
+    ("Achird", "Friendly"),
+    ("Zubenelgenubi", "Casual"),
+    ("Vindemiatrix", "Gentle"),
+    ("Sadachbia", "Lively"),
+    ("Sadaltager", "Knowledgeable"),
+    ("Sulafat", "Warm"),
+];
+
 pub struct GeminiClient {
     http: reqwest::Client,
     api_key: String,
@@ -54,7 +89,7 @@ impl GeminiClient {
         ))
     }
 
-    pub async fn tts_generate(&self, input_text: &str) -> Result<(Vec<u8>, String)> {
+    pub async fn tts_generate(&self, input_text: &str, voice_name: &str) -> Result<(Vec<u8>, String)> {
         let url = format!(
             "{}/models/{}:{}?key={}",
             self.base_url, "gemini-2.5-pro-preview-tts", "generateContent", self.api_key
@@ -69,7 +104,7 @@ impl GeminiClient {
                 "temperature": 1,
                 "speech_config": {
                     "voice_config": {
-                        "prebuilt_voice_config": { "voice_name": "Zephyr" }
+                        "prebuilt_voice_config": { "voice_name": voice_name }
                     }
                 }
             }
