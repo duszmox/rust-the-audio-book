@@ -235,3 +235,85 @@ pub fn wrap_pcm_to_wav(
     out.extend_from_slice(pcm);
     Ok(out)
 }
+
+/// Estimate the ratio of samples that are effectively silent for WAV data.
+/// Returns a value in [0.0, 1.0] where 1.0 means all samples are near-zero.
+/// Supports PCM 16-bit integer and 32-bit float WAV.
+pub fn estimate_wav_silence_ratio(bytes: &[u8]) -> Result<f32> {
+    let (fmt, _fmt_size) = parse_wav_fmt(bytes)?;
+    let data = parse_wav_data(bytes)?;
+
+    if data.is_empty() {
+        return Ok(1.0);
+    }
+
+    let bps = fmt.bits_per_sample;
+
+    match (fmt.audio_format, bps) {
+        // PCM 16-bit
+        (1, 16) => {
+            let sample_count = data.len() / 2; // 2 bytes per sample (per channel)
+            if sample_count == 0 { return Ok(1.0); }
+            let mut silent = 0usize;
+            let mut total = 0usize;
+            let threshold: i32 = (32767f32 * 0.01) as i32; // ~ -40 dBFS
+            let mut i = 0;
+            while i + 1 < data.len() {
+                let s = i16::from_le_bytes([data[i], data[i+1]]) as i32;
+                if s.abs() as i32 <= threshold { silent += 1; }
+                total += 1;
+                i += 2;
+            }
+            Ok((silent as f32) / (total as f32))
+        }
+        // IEEE float 32-bit
+        (3, 32) => {
+            let sample_count = data.len() / 4;
+            if sample_count == 0 { return Ok(1.0); }
+            let mut silent = 0usize;
+            let mut total = 0usize;
+            let mut i = 0;
+            let threshold = 0.005f32; // 0.5% FS
+            while i + 3 < data.len() {
+                let v = f32::from_le_bytes([
+                    data[i], data[i+1], data[i+2], data[i+3]
+                ]);
+                if v.abs() <= threshold { silent += 1; }
+                total += 1;
+                i += 4;
+            }
+            Ok((silent as f32) / (total as f32))
+        }
+        // Unsupported formats — fall back to a basic zero-byte heuristic per frame
+        _ => {
+            // Heuristic: consider frames (block_align) and count near-zero frames
+            let ba = fmt.block_align.max(1) as usize;
+            let mut silent = 0usize;
+            let mut total = 0usize;
+            let mut i = 0usize;
+            while i + ba <= data.len() {
+                let frame = &data[i..i+ba];
+                // If most bytes in frame are 0x00 or 0x80 (common silence centers), mark silent
+                let zeros = frame.iter().filter(|b| **b == 0x00 || **b == 0x80).count();
+                if zeros * 2 >= frame.len() { // >= 50% zero-ish bytes
+                    silent += 1;
+                }
+                total += 1;
+                i += ba;
+            }
+            if total == 0 { return Ok(1.0); }
+            Ok((silent as f32) / (total as f32))
+        }
+    }
+}
+
+/// Convenience helper: if `mime` indicates WAV, estimate silence ratio.
+/// Returns None when mime is not WAV or parsing fails.
+pub fn try_silence_ratio_from_mime(bytes: &[u8], mime: &str) -> Option<f32> {
+    let lower = mime.to_ascii_lowercase();
+    if lower.contains("wav") || lower.contains("x-wav") {
+        estimate_wav_silence_ratio(bytes).ok()
+    } else {
+        None
+    }
+}

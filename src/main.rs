@@ -3,10 +3,14 @@ use dotenvy::dotenv;
 use glob::glob;
 use std::env;
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use rust_the_audio_book::audio::{guess_audio_extension, merge_concat, merge_mp3, try_merge_wav};
+use rust_the_audio_book::audio::{
+    guess_audio_extension, merge_concat, merge_mp3, try_merge_wav, try_silence_ratio_from_mime,
+};
 use rust_the_audio_book::markdown::{
     expand_includes, replace_code_blocks_with_summaries, sanitize_markdown_for_tts,
     split_into_chunks_by_paragraph,
@@ -151,6 +155,16 @@ async fn process_markdown_file(
         transformed.chars().count(),
         tts_text.chars().count()
     );
+    let tmp_path = Path::new(&audio_dir).join("temp");
+    let tmp_dir = tmp_path.as_path();
+    if !tmp_dir.exists() {
+        fs::create_dir_all(tmp_dir).context("failed to crate audio/temp directory")?;
+    }
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow!("invalid file name: {}", path.display()))?;
+    let mut tmp_md = File::create(tmp_dir.with_file_name(file_name))?;
+    tmp_md.write_all(tts_text.as_bytes())?;
     let chunks = split_into_chunks_by_paragraph(&tts_text, 3000);
     println!(
         "Chunked content into {} piece(s) (<=3000 chars each)",
@@ -172,17 +186,41 @@ async fn process_markdown_file(
             chunk.chars().count()
         );
         let t0 = Instant::now();
-        let (audio_bytes, mime_type) =
-            client
-                .tts_generate(chunk, voice_name)
-                .await
-                .with_context(|| {
-                    format!(
-                        "TTS generation failed for {} (part {})",
-                        path.display(),
-                        i + 1
-                    )
-                })?;
+
+        let silence_threshold: f32 = 0.6; // 60% or more near-silence is considered bad
+        let max_regen_attempts: usize = 2; // total attempts = 1 + max_regen_attempts
+        let mut attempt = 0usize;
+        let (audio_bytes, mime_type) = loop {
+            let (bytes, mime) =
+                client
+                    .tts_generate(chunk, voice_name)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "TTS generation failed for {} (part {})",
+                            path.display(),
+                            i + 1
+                        )
+                    })?;
+
+            let ratio_opt = try_silence_ratio_from_mime(&bytes, &mime);
+            if let Some(ratio) = ratio_opt {
+                if ratio >= silence_threshold && attempt < max_regen_attempts {
+                    eprintln!(
+                        "warn: TTS part {:02}/{:02} mostly silent ({:.0}%); regenerating (attempt {}/{})",
+                        i + 1,
+                        chunks.len(),
+                        ratio * 100.0,
+                        attempt + 1,
+                        max_regen_attempts
+                    );
+                    attempt += 1;
+                    continue;
+                }
+            }
+            break (bytes, mime);
+        };
+
         println!(
             "{} | TTS part {:02}/{:02}: mime={}, {} bytes, took {:?}",
             now_ts(),
