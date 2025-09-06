@@ -18,10 +18,7 @@ use rust_the_audio_book::util::now_ts;
 async fn main() -> Result<()> {
     dotenv().ok();
 
-    let api_key = env::var("GEMINI_API_KEY")
-        .context("GEMINI_API_KEY not found in env; please set it in .env")?;
-
-    let client = GeminiClient::new(api_key)?;
+    // API key is resolved after parsing CLI args (env fallback)
 
     let mut args = env::args();
     let program = args
@@ -30,6 +27,7 @@ async fn main() -> Result<()> {
 
     let mut voice_name: String = "Zephyr".to_string();
     let mut file_args: Vec<PathBuf> = Vec::new();
+    let mut api_key_arg: Option<String> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -49,11 +47,33 @@ async fn main() -> Result<()> {
                 });
                 voice_name = v;
             }
+            "-k" | "--api-key" => {
+                let k = args.next().unwrap_or_else(|| {
+                    eprintln!("error: --api-key requires a value");
+                    print_help(&program);
+                    std::process::exit(2);
+                });
+                api_key_arg = Some(k);
+            }
             other => {
                 file_args.push(PathBuf::from(other));
             }
         }
     }
+
+    // Resolve API key (CLI arg overrides env/.env), then create client
+    let api_key = match api_key_arg {
+        Some(k) => k,
+        None => env::var("GEMINI_API_KEY").unwrap_or_else(|_| {
+            eprintln!(
+                "error: no API key provided. Either set GEMINI_API_KEY in the environment/.env or pass --api-key <KEY>."
+            );
+            print_help(&program);
+            std::process::exit(2);
+        }),
+    };
+
+    let client = GeminiClient::new(api_key)?;
 
     // Ensure audio output directory exists
     let audio_dir = Path::new("audio");
@@ -148,7 +168,7 @@ async fn process_markdown_file(
             "{} | TTS part {:02}/{:02}: {} chars...",
             now_ts(),
             i + 1,
-            chunks.len() - 1,
+            chunks.len(),
             chunk.chars().count()
         );
         let t0 = Instant::now();
@@ -167,7 +187,7 @@ async fn process_markdown_file(
             "{} | TTS part {:02}/{:02}: mime={}, {} bytes, took {:?}",
             now_ts(),
             i + 1,
-            chunks.len() - 1,
+            chunks.len(),
             mime_type,
             audio_bytes.len(),
             t0.elapsed()
@@ -225,9 +245,9 @@ async fn process_markdown_file(
 fn print_help(program: &str) {
     println!(
         "Usage: {program} [OPTIONS] [MARKDOWN_FILE]\n\n\
-Options:\n  -v, --voice <NAME>   Choose a voice (default: Zephyr)\n      --list-voices     List available voices and exit\n  -h, --help           Show this help and exit\n\n\
+Options:\n  -v, --voice <NAME>   Choose a voice (default: Zephyr)\n  -k, --api-key <KEY>  Provide Gemini API key (overrides GEMINI_API_KEY)\n      --list-voices     List available voices and exit\n  -h, --help           Show this help and exit\n\n\
 Args:\n  MARKDOWN_FILE        Optional single markdown file. If omitted, processes all book/src/*.md\n\n\
-Examples:\n  {program} --voice Zephyr\n  {program} --voice Leda book/src/ch08-02-strings.md\n  {program} --list-voices\n"
+Examples:\n  {program} --voice Zephyr\n  {program} --voice Leda book/src/ch08-02-strings.md\n  {program} --api-key YOUR_KEY --voice Zephyr book/src/ch06-02-match.md\n  {program} --list-voices\n"
     );
     print_voices_brief();
 }

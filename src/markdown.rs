@@ -147,14 +147,17 @@ pub async fn replace_code_blocks_with_summaries(
                 .summarize_code_block(&code_text)
                 .await
                 .unwrap_or_else(|e| format!("[summary failed: {e}]"));
+
+            let summary_trimmed = collapse_multiple_newlines(summary.trim());
             println!(
                 "Summary #{} done ({} chars) in {:?}",
                 count_blocks,
-                summary.chars().count(),
+                summary_trimmed.chars().count(),
                 t0.elapsed()
             );
 
-            out.push_str(&summary);
+            // Insert trimmed summary to avoid extra leading/trailing spacing
+            out.push_str(&summary_trimmed);
             out.push('\n');
             out.push_str(line);
             out.push('\n');
@@ -179,13 +182,15 @@ pub async fn replace_code_blocks_with_summaries(
             .summarize_code_block(&code_text)
             .await
             .unwrap_or_else(|e| format!("[summary failed: {e}]"));
+        let summary_trimmed = collapse_multiple_newlines(summary.trim());
         println!(
             "Summary #{} done ({} chars) in {:?}",
             count_blocks,
-            summary.chars().count(),
+            summary_trimmed.chars().count(),
             t0.elapsed()
         );
-        out.push_str(&summary);
+        // Insert trimmed, normalized summary to avoid extra spacing
+        out.push_str(&summary_trimmed);
         out.push('\n');
     }
 
@@ -362,9 +367,14 @@ pub fn sanitize_markdown_for_tts(input: &str) -> String {
     // Replace any 'scr/' with 'source/' as requested
     joined = joined.replace("scr/", "source/");
 
-    // Collapse 3+ newlines into 2 to avoid long silent gaps
-    let re_multi_blank = Regex::new(r"\n{3,}").unwrap();
-    joined = re_multi_blank.replace_all(&joined, "\n\n").into_owned();
+    let re_multi_blank = Regex::new(r"\n{2,}").unwrap();
+    joined = re_multi_blank.replace_all(&joined, "\n").into_owned();
 
     joined.trim().to_string()
+}
+
+fn collapse_multiple_newlines(input: &str) -> String {
+    let lf = input.replace("\r\n", "\n");
+    let re = Regex::new(r"\n{2,}").unwrap();
+    re.replace_all(&lf, "\n").into_owned()
 }

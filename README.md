@@ -22,11 +22,15 @@ Requirements
 
 Setup
 
-1. Ensure your `.env` file contains your Gemini key:
+1. Provide your Gemini API key either via environment or CLI:
 
-```yaml
+- Option A (.env):
+
+```env
 GEMINI_API_KEY=your_api_key_here
 ```
+
+- Option B (CLI): pass `--api-key <KEY>` when running.
 
 2. Build the project:
 
@@ -48,6 +52,12 @@ cargo run --release
 cargo run --release -- -v Leda book/src/ch01-02-hello-world.md
 ```
 
+- Pass API key via CLI instead of .env:
+
+```sh
+cargo run --release -- --api-key YOUR_KEY --voice Zephyr book/src/ch06-02-match.md
+```
+
 - List available voices:
 
 ```sh
@@ -63,6 +73,7 @@ cargo run --release -- --help
 CLI options
 
 - `-v, --voice <NAME>`: Choose a TTS voice (default: `Zephyr`).
+- `-k, --api-key <KEY>`: Provide Gemini API key (overrides `GEMINI_API_KEY`).
 - `--list-voices`: Print available voice names with short descriptions.
 - `-h, --help`: Show usage help and exit.
 
@@ -87,6 +98,7 @@ What the app does
 
 - Code block summarization: Finds triple‑backtick blocks and replaces their content by calling Gemini `generateContent` on `gemini-2.5-flash` with a short, non‑jargony summary prompt.
 - Text sanitization for TTS:
+
   - Removes Markdown links: `[text](url)` → `text`, `[text][id]` → `text`, drops autolinks `<https://...>` and bare URLs.
   - Handles images for audio friendliness:
     - Markdown images: `![alt](url)` and `![alt][id]` become just `alt`.
@@ -97,13 +109,17 @@ What the app does
   - Removes inline HTML tags/comments and backticks.
   - Replaces any `scr/` with `source/`.
   - Collapses excess blank lines to keep narration flowing.
+
 - Chunking: Splits the sanitized text into ≤ 3000 characters, prioritizing paragraph boundaries; falls back to sentence end.
 - TTS:
+
   - Calls `gemini-2.5-pro-preview-tts:generateContent` requesting audio.
   - Supports choosing among several prebuilt voices (see "Available voices").
   - If audio is returned as raw LINEAR16/PCM, wraps it into a valid WAV container for compatibility.
   - Logs timestamps and durations for each TTS chunk.
+
 - Merging:
+
   - WAV/PCM: Parses headers, validates matching format, concatenates data, and writes a single correct WAV.
   - MP3: Concatenates frame streams (works in most players).
 
@@ -131,7 +147,7 @@ cargo run --release -- book/src/ch02-00-guessing-game-tutorial.md
 
 Sample audio
 
-- Example output for Chapter 6.2 [(The `match` Control Flow Construct)](./sample/ch06-02-match.wav)
+- Example output for [Chapter 1.2 (Hello World)](./sample/ch01-02-hello-world.wav)
 
 Notes and limitations
 
@@ -151,40 +167,12 @@ Project layout
 - `src/tts.rs` — Gemini client (summaries + TTS with retries). Exposes `AVAILABLE_VOICES`.
 - `src/util.rs` — Small utilities (timestamps, etc.).
 - `Cargo.toml` — Dependencies (`reqwest`, `tokio`, `serde`, `dotenvy`, `regex`, `chrono`, etc.).
-- `.env` — Must contain `GEMINI_API_KEY`.
+- `.env` — Optionally contains `GEMINI_API_KEY` (if not using `--api-key`).
 - `audio/` — Output directory for generated audio files.
 
-Available voices
+Todo:
 
-Name — Description
-
-- Zephyr — Bright
-- Puck — Upbeat
-- Charon — Informative
-- Kore — Firm
-- Fenrir — Excitable
-- Leda — Youthful
-- Orus — Firm
-- Aoede — Breezy
-- Callirrhoe — Easy-going
-- Autonoe — Bright
-- Enceladus — Breathy
-- Iapetus — Clear
-- Umbriel — Easy-going
-- Algieba — Smooth
-- Despina — Smooth
-- Erinome — Clear
-- Algenib — Gravelly
-- Rasalgethi — Informative
-- Laomedeia — Upbeat
-- Achernar — Soft
-- Alnilam — Firm
-- Schedar — Even
-- Gacrux — Mature
-- Pulcherrima — Forward
-- Achird — Friendly
-- Zubenelgenubi — Casual
-- Vindemiatrix — Gentle
-- Sadachbia — Lively
-- Sadaltager — Knowledgeable
-- Sulafat — Warm
+- [ ] File / Paragraph for integrated experience with the mdbook version
+- [ ] Audio file hosting
+- [ ] Multi provider support
+- [ ] Offline TTS (probably won't be on the level of online hosted one)
