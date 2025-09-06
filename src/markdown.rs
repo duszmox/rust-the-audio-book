@@ -1,8 +1,117 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use regex::Regex;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::tts::GeminiClient;
+
+/// Expand mdBook include directives in the given Markdown text.
+/// - `{{#include path}}` is replaced with the file contents at `path` (relative to the MD file)
+/// - `{{#rustdoc_include path[:tag]}}` is replaced with contents of `path`, optionally extracting
+///   the region between lines `// ANCHOR: tag` and `// ANCHOR_END: tag`. Anchor comment lines
+///   themselves are removed.
+pub fn expand_includes(markdown_path: &Path, input: &str) -> Result<String> {
+    let re = Regex::new(r"\{\{\s*#(rustdoc_include|include)\s+([^}]+)\}\}")
+        .expect("valid include regex");
+
+    // Use replace_all to handle multiple directives possibly on the same line.
+    let result = re
+        .replace_all(input, |caps: &regex::Captures| {
+            let kind = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let arg = caps.get(2).map(|m| m.as_str().trim()).unwrap_or("");
+
+            let (path_str, tag_opt) = if kind == "rustdoc_include" {
+                // Split on the last ':' to allow optional region tag suffix
+                if let Some(idx) = arg.rfind(':') {
+                    (&arg[..idx], Some(arg[idx + 1..].trim()))
+                } else {
+                    (arg, None)
+                }
+            } else {
+                (arg, None)
+            };
+
+            // Resolve path relative to the Markdown file's directory
+            let base = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+            let target_path = normalize_path(base, path_str);
+
+            match fs::read_to_string(&target_path) {
+                Ok(file_text) => {
+                    if kind == "rustdoc_include" {
+                        // Extract region if requested and strip anchor comment lines
+                        let included = match tag_opt {
+                            Some(tag) if !tag.is_empty() => {
+                                extract_anchored_region(&file_text, tag)
+                                    .unwrap_or_else(|_| String::new())
+                            }
+                            _ => strip_anchor_comment_lines(&file_text),
+                        };
+                        included
+                    } else {
+                        file_text
+                    }
+                }
+                Err(e) => format!(
+                    "[include error: could not read {} (resolved from {}): {}]",
+                    target_path.display(),
+                    path_str,
+                    e
+                ),
+            }
+        })
+        .into_owned();
+
+    Ok(result)
+}
+
+fn normalize_path(base: &Path, rel: &str) -> PathBuf {
+    let p = base.join(rel);
+    if let Ok(c) = p.canonicalize() { c } else { p }
+}
+
+fn strip_anchor_comment_lines(input: &str) -> String {
+    let re_anchor = Regex::new(r"^\s*//\s*ANCHOR(?:_END)?:\s*\S+\s*$").unwrap();
+    input
+        .lines()
+        .filter(|l| !re_anchor.is_match(l))
+        .map(|l| l.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn extract_anchored_region(input: &str, tag: &str) -> Result<String> {
+    let start_re = Regex::new(&format!(r"^\s*//\s*ANCHOR:\s*{}\s*$", regex::escape(tag))).unwrap();
+    let end_re = Regex::new(&format!(
+        r"^\s*//\s*ANCHOR_END:\s*{}\s*$",
+        regex::escape(tag)
+    ))
+    .unwrap();
+
+    let mut out: Vec<String> = Vec::new();
+    let mut in_region = false;
+    let mut any_found = false;
+    for line in input.lines() {
+        if !in_region {
+            if start_re.is_match(line) {
+                in_region = true;
+                any_found = true;
+            }
+            continue;
+        } else if end_re.is_match(line) {
+            in_region = false;
+            continue;
+        } else {
+            out.push(line.to_string());
+        }
+    }
+
+    if !any_found {
+        Err(anyhow!("anchor region '{}' not found", tag))
+    } else {
+        Ok(out.join("\n"))
+    }
+}
 
 pub async fn replace_code_blocks_with_summaries(
     client: &GeminiClient,
@@ -152,14 +261,14 @@ pub fn split_into_chunks_by_paragraph(input: &str, max_chars: usize) -> Vec<Stri
 }
 
 fn remove_links_for_tts(input: &str) -> String {
-    // 0) Convert Markdown images to their alt text (drop the image itself)
+    // 1) Convert Markdown images to their alt text (drop the image itself)
     //    Examples: ![Alt text](url) -> Alt text,  ![Alt][id] -> Alt
     let re_img_inline = Regex::new(r"!\[([^\]]+)\]\([^\)]+\)").unwrap();
     let tmp = re_img_inline.replace_all(input, "$1").into_owned();
     let re_img_ref = Regex::new(r"!\[([^\]]+)\]\[[^\]]*\]").unwrap();
     let tmp = re_img_ref.replace_all(&tmp, "$1").into_owned();
 
-    // 1) Drop reference-style link definitions like: [id]: url "title"
+    // 2) Drop reference-style link definitions like: [id]: url "title"
     let mut filtered_lines = Vec::new();
     for line in tmp.lines() {
         let trimmed = line.trim_start();
@@ -170,19 +279,19 @@ fn remove_links_for_tts(input: &str) -> String {
     }
     let without_defs = filtered_lines.join("\n");
 
-    // 2) Replace inline links [text](url) -> text
+    // 3) Replace inline links [text](url) -> text
     let re_inline = Regex::new(r"\[([^\]]+)\]\([^\)]+\)").unwrap();
     let tmp = re_inline.replace_all(&without_defs, "$1").into_owned();
 
-    // 3) Replace reference links [text][id] -> text
+    // 4) Replace reference links [text][id] -> text
     let re_ref = Regex::new(r"\[([^\]]+)\]\[[^\]]*\]").unwrap();
     let tmp = re_ref.replace_all(&tmp, "$1").into_owned();
 
-    // 4) Remove autolinks <http://...>
+    // 5) Remove autolinks <http://...>
     let re_auto = Regex::new(r"<https?://[^>]+>").unwrap();
     let tmp = re_auto.replace_all(&tmp, "").into_owned();
 
-    // 5) Remove bare URLs http(s)://...
+    // 6) Remove bare URLs http(s)://...
     let re_bare = Regex::new(r"https?://\S+").unwrap();
     let tmp = re_bare.replace_all(&tmp, "").into_owned();
 

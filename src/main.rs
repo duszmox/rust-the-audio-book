@@ -8,7 +8,8 @@ use std::time::Instant;
 
 use rust_the_audio_book::audio::{guess_audio_extension, merge_concat, merge_mp3, try_merge_wav};
 use rust_the_audio_book::markdown::{
-    replace_code_blocks_with_summaries, sanitize_markdown_for_tts, split_into_chunks_by_paragraph,
+    expand_includes, replace_code_blocks_with_summaries, sanitize_markdown_for_tts,
+    split_into_chunks_by_paragraph,
 };
 use rust_the_audio_book::tts::{AVAILABLE_VOICES, GeminiClient};
 use rust_the_audio_book::util::now_ts;
@@ -112,8 +113,11 @@ async fn process_markdown_file(
         path.display(),
         original.chars().count()
     );
+    // Expand any mdBook-style includes before code summarization
+    let expanded = expand_includes(path, &original)?;
+
     let (transformed, summarized_blocks) =
-        replace_code_blocks_with_summaries(client, &original).await?;
+        replace_code_blocks_with_summaries(client, &expanded).await?;
     println!(
         "Summarized {} code block(s) in {}",
         summarized_blocks,
@@ -143,8 +147,8 @@ async fn process_markdown_file(
         println!(
             "{} | TTS part {:02}/{:02}: {} chars...",
             now_ts(),
-            chunks.len() - 1,
             i + 1,
+            chunks.len() - 1,
             chunk.chars().count()
         );
         let t0 = Instant::now();
