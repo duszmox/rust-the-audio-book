@@ -73,9 +73,9 @@ async fn process_markdown_file(client: &GeminiClient, path: &Path, audio_dir: &P
     );
 
     // Split content into <= 3000-char chunks on paragraph boundaries
-    let tts_text = remove_links_for_tts(&transformed);
+    let tts_text = sanitize_markdown_for_tts(&transformed);
     println!(
-        "Removed links for TTS: {} -> {} chars",
+        "Sanitized text for TTS (links/headers/lists/html/code fences): {} -> {} chars",
         transformed.chars().count(),
         tts_text.chars().count()
     );
@@ -350,6 +350,60 @@ fn remove_links_for_tts(input: &str) -> String {
     let tmp = re_bare.replace_all(&tmp, "").into_owned();
 
     tmp
+}
+
+fn sanitize_markdown_for_tts(input: &str) -> String {
+    // First, remove links
+    let mut text = remove_links_for_tts(input);
+
+    // Drop lines starting with <Listing or </Listing
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        let t = line.trim_start();
+        if t.starts_with("<Listing") || t.starts_with("</Listing") {
+            continue;
+        }
+        // Drop code fence lines (``` ...)
+        if t.starts_with("```") { continue; }
+        lines.push(line);
+    }
+    text = lines.join("\n");
+
+    // Remove inline HTML tags and comments
+    let re_comment = Regex::new(r"(?s)<!--.*?-->").unwrap();
+    text = re_comment.replace_all(&text, "").into_owned();
+    let re_tags = Regex::new(r"</?[^>]+>").unwrap();
+    text = re_tags.replace_all(&text, "").into_owned();
+
+    // Remove backticks (inline code markers)
+    text = text.replace('`', "");
+
+    // Strip heading #'s, blockquote '>'s, and list markers on each line
+    let re_heading = Regex::new(r"^\s*#{1,6}\s*").unwrap();
+    let re_blockquote = Regex::new(r"^\s*>+\s*").unwrap();
+    let re_bullet = Regex::new(r"^\s*[-*+]\s+").unwrap();
+    let re_numbered = Regex::new(r"^\s*\d+[\.)]\s+").unwrap();
+
+    let mut out_lines = Vec::new();
+    for line in text.lines() {
+        let mut l = line.to_string();
+        l = re_heading.replace(&l, "").into_owned();
+        l = re_blockquote.replace(&l, "").into_owned();
+        l = re_bullet.replace(&l, "").into_owned();
+        l = re_numbered.replace(&l, "").into_owned();
+        out_lines.push(l);
+    }
+    let mut joined = out_lines.join("\n");
+
+    // Replace any 'scr/' with 'source/' as requested
+    joined = joined.replace("scr/", "source/");
+
+    // Collapse 3+ newlines into 2 to avoid long silent gaps
+    let re_multi_blank = Regex::new(r"\n{3,}").unwrap();
+    joined = re_multi_blank.replace_all(&joined, "\n\n").into_owned();
+
+    // Trim leading/trailing whitespace
+    joined.trim().to_string()
 }
 
 fn now_ts() -> String {
